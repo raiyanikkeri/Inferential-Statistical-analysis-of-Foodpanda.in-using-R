@@ -1,0 +1,200 @@
+---
+title: "CSR PROJECT"
+author: "Swagath Varanchi Chandregowda and Raiyan Riyazahmedikkeri"
+date: "11 December 2017"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+
+```{r }
+
+library(tidyverse)
+library(readxl)
+library(RSQLite)
+
+
+#We scrapped data from Foodpanda India website and generated CSV files
+
+#Getting the data from csv file
+
+vendors <- read.csv("combined.csv")
+foodpanda <- read.csv("combine.csv")
+
+#Data cleaning
+
+#affordability rows did not recognize $ function while scraping the data, hence it can be replaced as shown below
+
+fp <- select(foodpanda, affordability )
+f.v <- as_vector( fp)
+df <- data_frame(affordability = character())
+
+for(i in 1:NROW(f.v))
+{
+  x= f.v[[i]]
+  p1 = 'โ,น'
+  p2 = 'โ,นโ,น'
+  p3 = 'โ,นโ,นโ,น'
+  p4 = 'โ,นโ,นโ,นโ,น'
+  p5 = 'โ,นโ,นโ,นโ,นโ,น'
+  
+  t1 = if (grepl(p1,x)==TRUE){gsub(p1,"$",x)}
+  else if(grepl(p2,x)==TRUE){gsub(p2, "$$", x)}
+  else if(grepl(p3,x)==TRUE){gsub(p3, "$$$", x)}
+  else if(grepl(p4,x)==TRUE){gsub(p4, "$$$$", x)}
+  else if(grepl(p5,x)==TRUE){gsub(p5, "$$$$$", x)}
+  else {x}
+  df[i, ] = t1
+}
+
+df
+
+foodpanda$affordability <- df$affordability
+
+#Some vendors have minimum order and some do not. 
+#We cleaned the data and make the CSV file more readle to analyze which restaurants have no minimum order.
+
+fs <- select(foodpanda, minimum_order )
+f.u <- as_vector( fs)
+ds <- data_frame(minimum_order = character())
+
+for(i in 1:NROW(f.u))
+{
+  x= f.u[[i]]
+  p1 = 'Rs.'
+  p2 = 'Free'
+  p3 = 'None'
+
+  
+  t1 = if (grepl(p1,x)==TRUE){gsub(p1,"",x)}
+  else if(grepl(p2,x)==TRUE){gsub(p2, "", x)}
+  else if(grepl(p3,x)==TRUE){gsub(p3, "", x)}
+
+  else {x}
+  ds[i, ] = t1
+}
+
+ds
+
+foodpanda$minimum_order <- ds$minimum_order
+
+# Make Connection
+
+
+
+pandadb<-dbConnect(SQLite(),dbname="vendordb.sqlite")
+summary(pandadb)
+
+
+
+
+# Entering data from dataframe to database
+
+dbWriteTable(conn = pandadb, name = "vendors", value = vendors, row.names = FALSE, header=T,overwrite=TRUE)
+
+
+
+dbListTables(pandadb)   # The tables in the database
+
+dbListFields(pandadb, "vendors")  # The columns in a table
+
+dbReadTable(pandadb, "vendors")      # The data in a table
+
+#We cleaned the data and put the data into SQLite using the packages.
+#We are going to use the data to retrieve important information.
+
+#1.	Restaurants currently offering discounts.
+
+discount <- dbGetQuery(pandadb,"
+           SELECT DISTINCT vendor_id, vendor_name, city, discount
+           FROM vendors
+           WHERE discount >0
+           ORDER BY DISCOUNT DESC; ")
+discount
+
+#2.	Restaurants having no reviews.
+
+noreviews <- dbGetQuery(pandadb,"
+           SELECT DISTINCT vendor_id, vendor_name, city
+           FROM vendors
+           WHERE review_count is null; ")
+
+noreviews
+
+#3.Top 20	Restaurants having highest number of reviews
+
+
+Resthigh <- dbGetQuery(pandadb,"
+           SELECT DISTINCT vendor_id, vendor_name, city, review_count
+           FROM vendors
+           WHERE review_count is not null
+           order by review_count desc limit 20; ")
+Resthigh
+
+#4. city by highest average rating 
+
+ Avg <- dbGetQuery(pandadb,"
+           SELECT  city, AVG(rating) as Rating
+           FROM vendors
+           Group by city
+           ORDER BY AVG(rating) desc; ")
+ Avg
+
+ 
+ #5. count number of restaurants per city
+ 
+ 
+ count <- dbGetQuery(pandadb,"
+           SELECT  city, count(vendor_id) as No_of_restaurants
+            FROM vendors
+            Group by city
+            ORDER BY count(vendor_id) desc; ")
+ 
+ count
+ 
+ 
+ #Visualization
+ #We visualized the data retrived using ggplot to find insights that can be useful for foodpanda
+
+ #1 City with highest average reviews 
+ 
+ ggplot(data = Avg) +
+   geom_bar(mapping = aes(x = city, y = Rating), stat = "identity", col=c("red"))
+ 
+ #2 Count of restaurants in the cities
+ 
+ ggplot(data = count) +
+   geom_bar(mapping = aes(x = city, y = No_of_restaurants), stat = "identity", col=c("green"))
+ 
+ 
+ #3 Cities having the highest number of top 20 restaurants
+ 
+ ggplot(data = Resthigh) + 
+   geom_bar(mapping = aes(x = city, colour = city))
+ ggplot(data = Resthigh) + 
+   geom_bar(mapping = aes(x = city ,fill = city))
+ 
+ #4 Cities with Maximum number of no reviews
+ 
+ ggplot(data = noreviews) + 
+   geom_bar(mapping = aes(x = city, colour = city))
+ ggplot(data = noreviews) + 
+   geom_bar(mapping = aes(x = city ,fill = city))
+
+ 
+ #5 Cities with highest number of restaurants with Discount
+ 
+ ggplot(data = discount) +
+   geom_bar(mapping = aes(x = city, y = 'No_of_restaurants'), stat = "identity", col=c("brown"))
+ 
+ 
+ 
+ 
+```
+
